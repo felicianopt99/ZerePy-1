@@ -6,20 +6,40 @@ document.addEventListener('DOMContentLoaded', () => {
     let connections = {};
     let agents = [];
     let isAgentRunning = false;
+    let tasks = [];
+    let selectedTaskId = null;
 
     // Elements
     const tabItems = document.querySelectorAll('.nav-item');
     const tabPanes = document.querySelectorAll('.tab-pane');
     const tabTitle = document.getElementById('tab-title');
     const terminal = document.getElementById('terminal');
+    const startLoopBtn = document.getElementById('start-loop-btn');
+    const stopLoopBtn = document.getElementById('stop-loop-btn');
+    const loadAgentBtn = document.getElementById('load-agent-btn');
+    const personaDropdown = document.getElementById('persona-dropdown');
+    const connectionsList = document.getElementById('connections-list');
+    const clearTerminalBtn = document.getElementById('clear-terminal');
+    
+    // Chat Elements
     const chatMessages = document.getElementById('chat-messages');
     const chatInput = document.getElementById('chat-input');
     const sendChatBtn = document.getElementById('send-chat-btn');
-    const personaDropdown = document.getElementById('persona-dropdown');
-    const loadAgentBtn = document.getElementById('load-agent-btn');
-    const startLoopBtn = document.getElementById('start-loop-btn');
-    const stopLoopBtn = document.getElementById('stop-loop-btn');
-    const connectionsList = document.getElementById('connections-list');
+    
+    // Inbox Elements
+    const taskList = document.getElementById('task-list');
+    const generateMocksBtn = document.getElementById('generate-mocks-btn');
+    const taskDetailContent = document.getElementById('task-detail-content');
+    const emptyDetailState = document.querySelector('.empty-detail-state');
+    const platformBadge = document.getElementById('detail-platform-badge');
+    const typeBadge = document.getElementById('detail-type-badge');
+    const detailPersonaName = document.getElementById('detail-persona-name');
+    const detailImageContainer = document.getElementById('detail-image-container');
+    const detailImage = document.getElementById('detail-image');
+    const taskContentEditor = document.getElementById('task-content-editor');
+    const approveTaskBtn = document.getElementById('approve-task-btn');
+    const rejectTaskBtn = document.getElementById('reject-task-btn');
+
     const configModal = document.getElementById('config-modal');
     const closeModalBtn = document.querySelector('.close-modal');
     const configForm = document.getElementById('config-form');
@@ -42,17 +62,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const personaModelProvider = document.getElementById('persona-model-provider');
     const personaModelName = document.getElementById('persona-model-name');
 
-    // Gallery Elements
+    // Gallery Elements (Studio)
     const imageGenForm = document.getElementById('image-gen-form');
-    const genMethodSelect = document.getElementById('gen-method');
-    const geminiGroup = document.getElementById('gemini-group');
-    const comfyGroup = document.getElementById('comfy-group');
-    const geminiKeyInput = document.getElementById('gemini-api-key');
-    const comfyUrlInput = document.getElementById('comfy-url');
     const imagePromptInput = document.getElementById('image-prompt');
+    const genStyle = document.getElementById('gen-style');
+    const genSeed = document.getElementById('gen-seed');
+    const randomizeSeedBtn = document.getElementById('randomize-seed');
     const galleryGrid = document.getElementById('gallery-grid');
     const galleryStatus = document.getElementById('gallery-status');
     const generateBtn = document.getElementById('generate-btn');
+    const mainOutput = document.getElementById('main-output');
 
     // Tab Switching
     tabItems.forEach(item => {
@@ -85,6 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tab === 'connections') fetchConnections();
         if (tab === 'personas') fetchPersonas();
         if (tab === 'gallery') initGallery();
+        if (tab === 'inbox') fetchTasks();
     }
 
     // Terminal Helper
@@ -128,6 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (loadedAgent) {
                 document.getElementById('stat-model').textContent = loadedAgent;
                 document.getElementById('stat-status').textContent = isAgentRunning ? 'Running' : 'Loaded';
+                fetchConnections();
             }
         }
     }
@@ -157,7 +178,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function fetchConnections() {
-        if (!loadedAgent) return;
+        if (!loadedAgent) {
+            connectionsList.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-user-slash"></i>
+                    <p>Please load a persona to view and manage connections.</p>
+                </div>
+            `;
+            return;
+        }
         const data = await apiRequest('/connections');
         if (data) {
             connections = data.connections;
@@ -183,6 +212,61 @@ document.addEventListener('DOMContentLoaded', () => {
                 personaModelProvider.value = currentProvider;
             }
         }
+    }
+
+    async function fetchTasks() {
+        const data = await apiRequest('/agent/tasks');
+        if (data) {
+            tasks = data;
+            renderTasks();
+        }
+    }
+
+    function renderTasks() {
+        taskList.innerHTML = '';
+        if (tasks.length === 0) {
+            taskList.innerHTML = '<div class="empty-list-message">No pending tasks.</div>';
+            return;
+        }
+
+        tasks.forEach(task => {
+            const item = document.createElement('div');
+            item.className = `task-item ${selectedTaskId === task.id ? 'active' : ''}`;
+            item.innerHTML = `
+                <div class="task-item-header">
+                    <span class="task-item-platform">${task.platform}</span>
+                    <span class="task-item-type">${task.type}</span>
+                </div>
+                <div class="task-item-content">${task.content}</div>
+            `;
+            item.onclick = () => showTaskDetail(task.id);
+            taskList.appendChild(item);
+        });
+    }
+
+    function showTaskDetail(taskId) {
+        selectedTaskId = taskId;
+        const task = tasks.find(t => t.id === taskId);
+        if (!task) return;
+
+        // Update list active state
+        renderTasks();
+
+        // Populate detail view
+        platformBadge.textContent = task.platform;
+        typeBadge.textContent = task.type;
+        detailPersonaName.textContent = task.persona;
+        taskContentEditor.value = task.content;
+
+        if (task.image_url) {
+            detailImage.src = task.image_url;
+            detailImageContainer.classList.remove('hidden');
+        } else {
+            detailImageContainer.classList.add('hidden');
+        }
+
+        emptyDetailState.classList.add('hidden');
+        taskDetailContent.classList.remove('hidden');
     }
 
     async function loadAgentConfig(name) {
@@ -278,7 +362,7 @@ document.addEventListener('DOMContentLoaded', () => {
             crypto: { title: 'Web3 & Crypto (Advanced)', icon: 'fa-link', connections: [] }
         };
 
-        const aiConns = ['openai', 'anthropic', 'ollama', 'groq', 'hyperbolic', 'galadriel', 'eternalai', 'xai', 'together', 'nvidia-nim'];
+        const aiConns = ['openai', 'anthropic', 'ollama', 'groq', 'hyperbolic', 'galadriel', 'eternalai', 'xai', 'together', 'nvidia-nim', 'gemini_vision', 'comfy_api'];
         const socialConns = ['twitter', 'farcaster', 'discord', 'instagram', 'fanvue'];
 
         Object.entries(connections).forEach(([name, status]) => {
@@ -426,6 +510,10 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (connName === 'solana') {
             configFields.appendChild(createField('RPC URL', 'rpc_url', 'text', 'https://api.mainnet-beta.solana.com'));
             configFields.appendChild(createField('Private Key (Optional)', 'private_key', 'password'));
+        } else if (connName === 'gemini_vision') {
+            configFields.appendChild(createField('Gemini API Key', 'api_key', 'password', 'Enter API Key from Google AI Studio'));
+        } else if (connName === 'comfy_api') {
+            configFields.appendChild(createField('Server URL (Colab/Remote)', 'api_url', 'text', 'https://your-comfy-tunnel.cloudflare.com'));
         } else {
             // Default fallback: JSON textarea for unknown connections
             const fieldGroup = document.createElement('div');
@@ -502,8 +590,44 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     startLoopBtn.onclick = startLoop;
     stopLoopBtn.onclick = stopLoop;
+
+    // Inbox Handlers
+    generateMocksBtn.onclick = async () => {
+        const data = await apiRequest('/agent/tasks/mock', 'POST');
+        if (data) {
+            logToTerminal(`Generated ${data.added} mock tasks.`, 'success');
+            fetchTasks();
+        }
+    };
+
+    approveTaskBtn.onclick = async () => {
+        if (!selectedTaskId) return;
+        const content = taskContentEditor.value;
+        const data = await apiRequest(`/agent/tasks/${selectedTaskId}/approve`, 'POST', { content });
+        if (data) {
+            logToTerminal('Task approved and "published".', 'success');
+            selectedTaskId = null;
+            taskDetailContent.classList.add('hidden');
+            emptyDetailState.classList.remove('hidden');
+            fetchTasks();
+        }
+    };
+
+    rejectTaskBtn.onclick = async () => {
+        if (!selectedTaskId) return;
+        const data = await apiRequest(`/agent/tasks/${selectedTaskId}/reject`, 'POST');
+        if (data) {
+            logToTerminal('Task rejected.', 'system');
+            selectedTaskId = null;
+            taskDetailContent.classList.add('hidden');
+            emptyDetailState.classList.remove('hidden');
+            fetchTasks();
+        }
+    };
+
     sendChatBtn.onclick = sendMessage;
     chatInput.onkeypress = (e) => { if (e.key === 'Enter') sendMessage(); };
+
     document.getElementById('clear-terminal').onclick = () => terminal.innerHTML = '';
 
     personaForm.onsubmit = async (e) => {
@@ -589,13 +713,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // Load saved values
         const savedMethod = localStorage.getItem('gen_method') || 'gemini';
         genMethodSelect.value = savedMethod;
-        toggleGenGroups(savedMethod);
-
-        const savedKey = localStorage.getItem('gemini_api_key');
-        if (savedKey) geminiKeyInput.value = savedKey;
-
-        const savedUrl = localStorage.getItem('comfy_api_url');
-        if (savedUrl) comfyUrlInput.value = savedUrl;
 
         // Fetch existing images
         const data = await apiRequest('/agent/gallery_images');
@@ -607,19 +724,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function toggleGenGroups(method) {
-        if (method === 'gemini') {
-            geminiGroup.classList.remove('hidden');
-            comfyGroup.classList.add('hidden');
-        } else {
-            geminiGroup.classList.add('hidden');
-            comfyGroup.classList.remove('hidden');
-        }
-    }
+    // No longer needed, using radio buttons
 
-    genMethodSelect.onchange = (e) => {
-        toggleGenGroups(e.target.value);
-        localStorage.setItem('gen_method', e.target.value);
+    randomizeSeedBtn.onclick = () => {
+        const newSeed = Math.floor(Math.random() * 1000000000);
+        genSeed.value = newSeed;
     };
     
     // Call initGallery early
@@ -633,69 +742,91 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const method = genMethodSelect.value;
-        const key = geminiKeyInput.value.trim();
-        const url = comfyUrlInput.value.trim();
+        const method = document.querySelector('input[name="method"]:checked').value;
         const prompt = imagePromptInput.value.trim();
+        const aspectRatio = document.querySelector('input[name="aspect_ratio"]:checked').value;
+        const style = genStyle.value;
+        let seed = parseInt(genSeed.value);
 
-        if (method === 'gemini' && !key) {
-            alert('Please provide a Gemini API Key.');
-            return;
-        }
-        if (method === 'comfy' && !url) {
-            alert('Please provide a ComfyUI URL.');
-            return;
-        }
         if (!prompt) {
-            alert('Please provide a prompt.');
+            alert('Please provide a situational prompt.');
             return;
         }
 
-        // Save values
-        localStorage.setItem('gemini_api_key', key);
-        localStorage.setItem('comfy_api_url', url);
-        localStorage.setItem('gen_method', method);
+        if (isNaN(seed) || seed === -1) {
+            seed = null;
+        }
 
         galleryStatus.classList.remove('hidden');
+        mainOutput.classList.add('hidden');
         generateBtn.disabled = true;
 
-        logToTerminal(`Generating image via ${method}... please wait.`, 'info');
+        logToTerminal(`Generating via ${method}...`, 'info');
 
         const data = await apiRequest('/agent/generate_image', 'POST', {
             method: method,
             persona_name: loadedAgent,
             prompt: prompt,
-            gemini_api_key: key,
-            comfy_api_url: url
+            aspect_ratio: aspectRatio,
+            seed: seed,
+            style_preset: style,
+            quality: 'Standard'
         });
 
         galleryStatus.classList.add('hidden');
+        mainOutput.classList.remove('hidden');
         generateBtn.disabled = false;
 
         if (data && data.status === 'success') {
-            logToTerminal(`Image generated successfully for ${loadedAgent}!`, 'success');
+            logToTerminal(`Image generated successfully!`, 'success');
+            renderMainOutput(data.image_url, data.prompt);
             addGalleryItem(data.image_url, data.prompt);
-            imagePromptInput.value = '';
         } else {
-            // Error already logged by apiRequest
-            logToTerminal('Image generation failed. Check terminal for details.', 'error');
+            logToTerminal('Generation failed. Check Connections (API Key/URL).', 'error');
+        }
+    };
+
+    function renderMainOutput(url, prompt) {
+        mainOutput.innerHTML = `
+            <div class="studio-main-preview">
+                <img src="${url}" alt="Preview">
+                <div class="studio-preview-actions">
+                    <button class="btn btn-primary" onclick="sendToInbox('${url}', '${prompt.replace(/'/g, "\\'")}')">
+                        <i class="fas fa-paper-plane"></i> Send to Inbox
+                    </button>
+                    <a href="${url}" target="_blank" class="btn btn-secondary">
+                        <i class="fas fa-download"></i> Download
+                    </a>
+                </div>
+            </div>
+        `;
+    }
+
+    // Expose to window for onclick
+    window.sendToInbox = async (url, prompt) => {
+        logToTerminal('Sending creation to Inbox...');
+        const data = await apiRequest('/agent/tasks/create', 'POST', {
+            persona: loadedAgent || 'Daisy',
+            content: `New studio creation: ${prompt}`,
+            image_url: url
+        });
+        if (data) {
+            logToTerminal('Studio creation sent to Inbox tasks!', 'success');
         }
     };
 
     function addGalleryItem(url, prompt) {
         const item = document.createElement('div');
-        item.className = 'gallery-item';
+        item.className = 'studio-item';
         item.innerHTML = `
-            <img src="${url}" alt="Generated Image" loading="lazy">
-            <div class="gallery-item-content">
-                <span class="gallery-item-prompt" title="${prompt}">${prompt}</span>
-                <button class="btn btn-icon delete-img" title="Delete locally (Not implemented)">
-                    <i class="fas fa-trash"></i>
+            <img src="${url}" alt="History Item" loading="lazy">
+            <div class="studio-item-actions">
+                <button class="btn btn-icon btn-sm" onclick="renderMainOutput('${url}', '${prompt.replace(/'/g, "\\'")}')">
+                    <i class="fas fa-eye"></i>
                 </button>
             </div>
         `;
         
-        // Insert at top
         if (galleryGrid.firstChild) {
             galleryGrid.insertBefore(item, galleryGrid.firstChild);
         } else {

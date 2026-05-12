@@ -23,6 +23,8 @@ from src.connections.evm_connection import EVMConnection
 from src.connections.perplexity_connection import PerplexityConnection
 from src.connections.monad_connection import MonadConnection
 from src.connections.nvidia_nim_connection import NvidiaNimConnection
+from src.connections.gemini_vision_connection import GeminiVisionConnection
+from src.connections.comfy_api_connection import ComfyAPIConnection
 
 logger = logging.getLogger("connection_manager")
 
@@ -32,6 +34,12 @@ class ConnectionManager:
         self.connections: Dict[str, BaseConnection] = {}
         for config in agent_config:
             self._register_connection(config)
+            
+        # Ensure virtual connections for image generation are always available
+        if "gemini_vision" not in self.connections:
+            self._register_connection({"name": "gemini_vision"})
+        if "comfy_api" not in self.connections:
+            self._register_connection({"name": "comfy_api"})
 
     @staticmethod
     def _class_name_to_type(class_name: str) -> Type[BaseConnection]:
@@ -79,6 +87,10 @@ class ConnectionManager:
             return MonadConnection
         elif class_name == "nvidia-nim":
             return NvidiaNimConnection
+        elif class_name == "gemini_vision":
+            return GeminiVisionConnection
+        elif class_name == "comfy_api":
+            return ComfyAPIConnection
         return None
 
     def _register_connection(self, config_dic: Dict[str, Any]) -> None:

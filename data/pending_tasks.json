@@ -1,0 +1,22 @@
+[
+  {
+    "id": "dabd0f14-c79c-4df3-9a03-2ddfc8057bb4",
+    "persona": "ExampleAgent",
+    "type": "post",
+    "platform": "instagram",
+    "content": "Just had the most amazing morning! The sun is shining and everything feels perfect. \u2728 #blessed #morningvibes",
+    "image_url": null,
+    "status": "pending"
+  },
+  {
+    "id": "2ab13ca4-2eb1-42f0-a847-7ca4ea049d94",
+    "persona": "ExampleAgent",
+    "type": "dm",
+    "platform": "fanvue",
+    "content": "Hey babe! I just posted something special for you. Go check your inbox and let me know what you think! \ud83d\ude09",
+    "image_url": null,
+    "status": "pending",
+    "user_id": "fan_123",
+    "user_name": "Jo\u00e3o VIP"
+  }
+]

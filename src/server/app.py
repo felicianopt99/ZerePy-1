@@ -13,8 +13,11 @@ import asyncio
 import base64
 import httpx
 import time
+import os
+import random
 from pathlib import Path
 from src.cli import ZerePyCLI
+from src.memory import MemoryManager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("server/app")
@@ -39,8 +42,16 @@ class UniversalImageRequest(BaseModel):
     method: str = "gemini" # gemini or comfy
     persona_name: str
     prompt: str
-    gemini_api_key: Optional[str] = None
-    comfy_api_url: Optional[str] = None
+    aspect_ratio: str = "1:1"
+    seed: Optional[int] = None
+    style_preset: Optional[str] = "Realism"
+    quality: Optional[str] = "Standard"
+
+class MemoryAddRequest(BaseModel):
+    """Request model for adding a memory"""
+    persona_name: str
+    user_id: str
+    fact: str
 
 class AgentSaveRequest(BaseModel):
     """Request model for saving agent configuration"""
@@ -58,6 +69,22 @@ class AgentSaveRequest(BaseModel):
 
     class Config:
         extra = "allow"
+
+class Task(BaseModel):
+    """Model for a pending HITL task"""
+    id: str
+    persona: str
+    type: str  # post|dm
+    platform: str  # instagram|fanvue|twitter
+    content: str
+    image_url: Optional[str] = None
+    status: str = "pending"
+    user_id: Optional[str] = None
+    user_name: Optional[str] = None
+
+class ApproveTaskRequest(BaseModel):
+    """Request model for approving a task with optional edits"""
+    content: str
 
 class ServerState:
     """Simple state management for the server"""
@@ -127,11 +154,37 @@ class ZerePyServer:
         )
         
         self.state = ServerState()
+        self.memory = MemoryManager()
         self.setup_routes()
         
         # Mount static files
         static_path = Path(__file__).parent / "static"
         self.app.mount("/static", StaticFiles(directory=str(static_path), html=True), name="static")
+        
+        # Initialize tasks storage
+        self.tasks_path = Path("data") / "pending_tasks.json"
+        self._ensure_tasks_file()
+
+    def _ensure_tasks_file(self):
+        """Ensure the tasks file exists and is a valid JSON array"""
+        if not self.tasks_path.parent.exists():
+            self.tasks_path.parent.mkdir(parents=True)
+        if not self.tasks_path.exists():
+            with open(self.tasks_path, "w") as f:
+                json.dump([], f)
+
+    def _read_tasks(self) -> List[Dict[str, Any]]:
+        """Read tasks from the JSON file"""
+        try:
+            with open(self.tasks_path, "r") as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
+
+    def _write_tasks(self, tasks: List[Dict[str, Any]]):
+        """Write tasks to the JSON file"""
+        with open(self.tasks_path, "w") as f:
+            json.dump(tasks, f, indent=2)
 
     def setup_routes(self):
         @self.app.get("/")
@@ -288,7 +341,20 @@ class ZerePyServer:
                     agent_config = json.load(f)
                 
                 visual_prompt_base = agent_config.get("visual_prompt_base", "")
+                
+                # --- PROMPT COMPOSER ---
+                style_keywords = {
+                    "Polaroid": "vintage polaroid, 1990s aesthetic, film grain, slight motion blur, instant camera photo, washed colors",
+                    "Cinematic": "highly detailed, masterpiece, 8k, dramatic cinematic lighting, rim lighting, depth of field, f/1.8, movie still",
+                    "Realist": "raw photo, photorealistic, 8k, ultra-high resolution, sharp focus, professional street photography, natural lighting",
+                    "Anime": "high quality anime style, vibrant colors, clean lines, cel shaded",
+                    "Digital Art": "vibrant digital illustration, trending on artstation, sharp details"
+                }
+                style_bonus = style_keywords.get(request.style_preset, "")
+                
                 full_prompt = f"{visual_prompt_base}, {request.prompt}" if visual_prompt_base else request.prompt
+                if style_bonus:
+                    full_prompt = f"{full_prompt}, {style_bonus}"
                 
                 gallery_dir = Path(__file__).parent / "static" / "gallery"
                 gallery_dir.mkdir(parents=True, exist_ok=True)
@@ -296,12 +362,37 @@ class ZerePyServer:
 
                 if request.method == "gemini":
                     # --- GEMINI MODE ---
-                    if not request.gemini_api_key:
-                        raise HTTPException(status_code=400, detail="Gemini API Key is required")
+                    gemini_conn = self.state.cli.agent.connection_manager.connections.get("gemini_vision")
+                    api_key = os.getenv("GEMINI_API_KEY")
                     
-                    logger.info(f"Generating Gemini image: {full_prompt}")
-                    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key={request.gemini_api_key}"
-                    payload = {"instances": [{"prompt": full_prompt}], "parameters": {"sampleCount": 1}}
+                    if not api_key:
+                        raise HTTPException(status_code=400, detail="Gemini Vision connection is not configured (API Key missing)")
+                    
+                    logger.info(f"Generating Gemini image: {full_prompt} | Ratio: {request.aspect_ratio}")
+                    
+                    # Mapping aspect ratios for Imagen 3
+                    # Values: "1:1", "9:16", "16:9", "4:3", "3:4"
+                    ratio_map = {
+                        "Square 1:1": "1:1",
+                        "Portrait 4:5": "3:4",
+                        "Story 9:16": "9:16"
+                    }
+                    target_ratio = ratio_map.get(request.aspect_ratio, "1:1")
+
+                    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key={api_key}"
+                    
+                    # Professional payload for Imagen 3
+                    payload = {
+                        "instances": [{"prompt": full_prompt}],
+                        "parameters": {
+                            "sampleCount": 1,
+                            "aspectRatio": target_ratio,
+                            "safetySetting": "block_none" if request.quality == "High-Res" else "block_medium_and_above"
+                        }
+                    }
+                    
+                    if request.seed is not None:
+                        payload["parameters"]["seed"] = request.seed
 
                     async with httpx.AsyncClient(timeout=60.0) as client:
                         resp = await client.post(api_url, json=payload)
@@ -320,18 +411,45 @@ class ZerePyServer:
 
                 else:
                     # --- COMFYUI MODE ---
-                    if not request.comfy_api_url:
-                        raise HTTPException(status_code=400, detail="ComfyUI URL is required")
-                    
                     logger.info(f"Generating ComfyUI image: {full_prompt}")
                     workflow_path = Path("comfy_workflows") / "default_workflow.json"
                     with open(workflow_path, "r") as f:
                         workflow = json.load(f)
                     
                     # Inject prompt into Node 6
-                    if "6" in workflow: workflow["6"]["inputs"]["text"] = full_prompt
+                    if "6" in workflow: workflow["6"]["inputs"]["text"] = f"{full_prompt}, style of {request.style_preset}"
                     
-                    api_url = request.comfy_api_url.rstrip("/")
+                    # Inject Seed into Node 3 (KSampler)
+                    if "3" in workflow:
+                        seed = request.seed if request.seed is not None else random.randint(1, 1125899906842624)
+                        workflow["3"]["inputs"]["seed"] = seed
+                    
+                    # Inject Aspect Ratio into Node 5 (EmptyLatentImage)
+                    if "5" in workflow:
+                        # Standard 512 base
+                        if request.aspect_ratio == "Square 1:1":
+                            width, height = 512, 512
+                        elif request.aspect_ratio == "Portrait 4:5":
+                            width, height = 512, 640
+                        elif request.aspect_ratio == "Story 9:16":
+                            width, height = 512, 910
+                        else:
+                            width, height = 512, 512
+                            
+                        # High-Res scale
+                        if request.quality == "High-Res":
+                            width = int(width * 1.5)
+                            height = int(height * 1.5)
+                            
+                        workflow["5"]["inputs"]["width"] = width
+                        workflow["5"]["inputs"]["height"] = height
+
+                    # Get URL from environment
+                    api_url = os.getenv("COMFYUI_API_URL")
+                    if not api_url:
+                        raise HTTPException(status_code=400, detail="ComfyUI connection is not configured (URL missing)")
+                    
+                    api_url = api_url.rstrip("/")
                     async with httpx.AsyncClient(timeout=60.0) as client:
                         p_resp = await client.post(f"{api_url}/prompt", json={"prompt": workflow})
                         prompt_id = p_resp.json().get("prompt_id")
@@ -367,6 +485,24 @@ class ZerePyServer:
                 logger.error(f"Image generation failed: {e}")
                 if isinstance(e, HTTPException): raise e
                 raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/agent/tasks/create")
+        async def create_task(request: Dict[str, Any]):
+            """Create a new task manually (e.g. from gallery)"""
+            import uuid
+            tasks = self._read_tasks()
+            new_task = {
+                "id": str(uuid.uuid4()),
+                "persona": request.get("persona", "Daisy"),
+                "type": "post",
+                "platform": "instagram",
+                "content": request.get("content", ""),
+                "image_url": request.get("image_url"),
+                "status": "pending"
+            }
+            tasks.insert(0, new_task)
+            self._write_tasks(tasks)
+            return {"status": "success", "task": new_task}
 
 
         @self.app.get("/agent/gallery_images")
@@ -430,6 +566,113 @@ class ZerePyServer:
                     "is_llm_provider": connection.is_llm_provider
                 }
                 
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/agent/tasks")
+        async def get_tasks():
+            """Get all pending tasks"""
+            return self._read_tasks()
+
+        @self.app.post("/agent/tasks/{task_id}/approve")
+        async def approve_task(task_id: str, request: ApproveTaskRequest):
+            """Approve and 'publish' a task"""
+            tasks = self._read_tasks()
+            task_index = next((i for i, t in enumerate(tasks) if t["id"] == task_id), None)
+            
+            if task_index is None:
+                raise HTTPException(status_code=404, detail="Task not found")
+            
+            task = tasks.pop(task_index)
+            task["content"] = request.content
+            task["status"] = "approved"
+            
+            # Simulate publication
+            logger.info(f"--- PUBLISHING TASK ---")
+            logger.info(f"Platform: {task.get('platform')}")
+            logger.info(f"Content: {task['content']}")
+            if task.get("image_url"):
+                logger.info(f"Image: {task['image_url']}")
+            logger.info(f"-----------------------")
+            
+            
+            self._write_tasks(tasks)
+            
+            # (Opcional) Log para demonstrar injeção de memória
+            if task.get("user_id"):
+                memories = await self.memory.get_user_memories(task["persona"], task["user_id"])
+                logger.info(f"Contexto injetado na IA para {task['user_id']}: {memories}")
+
+            return {"status": "success", "message": "Task approved and published"}
+
+        @self.app.post("/agent/tasks/{task_id}/reject")
+        async def reject_task(task_id: str):
+            """Reject and remove a task"""
+            tasks = self._read_tasks()
+            tasks = [t for t in tasks if t["id"] != task_id]
+            self._write_tasks(tasks)
+            return {"status": "success", "message": "Task rejected"}
+
+        @self.app.post("/agent/tasks/mock")
+        async def mock_tasks():
+            """Generate dummy tasks for testing"""
+            import uuid
+            
+            # Find a local image if possible
+            gallery_dir = Path(__file__).parent / "static" / "gallery"
+            mock_image = None
+            if gallery_dir.exists():
+                images = list(gallery_dir.glob("*.png")) + list(gallery_dir.glob("*.jpg"))
+                if images:
+                    mock_image = f"/static/gallery/{images[0].name}"
+
+            mocks = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "persona": self.state.cli.agent.name if self.state.cli.agent else "Daisy",
+                    "type": "post",
+                    "platform": "instagram",
+                    "content": "Just had the most amazing morning! The sun is shining and everything feels perfect. ✨ #blessed #morningvibes",
+                    "image_url": mock_image,
+                    "status": "pending"
+                },
+                {
+                    "id": str(uuid.uuid4()),
+                    "persona": self.state.cli.agent.name if self.state.cli.agent else "Daisy",
+                    "type": "dm",
+                    "platform": "fanvue",
+                    "content": "Hey babe! I just posted something special for you. Go check your inbox and let me know what you think! 😉",
+                    "image_url": None,
+                    "status": "pending",
+                    "user_id": "fan_123",
+                    "user_name": "João VIP"
+                }
+            ]
+            
+            tasks = self._read_tasks()
+            tasks.extend(mocks)
+            self._write_tasks(tasks)
+            return {"status": "success", "added": len(mocks)}
+
+        @self.app.get("/agent/memory/{persona_name}/{user_id}")
+        async def get_memories(persona_name: str, user_id: str):
+            """Get long-term memories for a specific user"""
+            try:
+                memories = await self.memory.get_user_memories(persona_name, user_id)
+                return {"status": "success", "memories": memories}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/agent/memory/add")
+        async def add_memory(request: MemoryAddRequest):
+            """Add a new fact to long-term memory"""
+            try:
+                memory_id = await self.memory.add_memory(
+                    request.persona_name, 
+                    request.user_id, 
+                    request.fact
+                )
+                return {"status": "success", "memory_id": memory_id}
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 

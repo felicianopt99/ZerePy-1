@@ -22,8 +22,12 @@
                     <span>Dashboard</span>
                 </a>
                 <a href="#" class="nav-item" data-tab="chat">
-                    <i class="fas fa-comment-dots"></i>
+                    <i class="fas fa-comments"></i>
                     <span>Chat</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="inbox">
+                    <i class="fas fa-inbox"></i>
+                    <span>Inbox (Approvals)</span>
                 </a>
                 <a href="#" class="nav-item" data-tab="connections">
                     <i class="fas fa-plug"></i>
@@ -114,14 +118,70 @@
                 <div class="chat-container">
                     <div id="chat-messages" class="chat-messages">
                         <div class="message assistant">
-                            <div class="message-bubble">Hello! I am your loaded agent. How can I help you today?</div>
+                            <div class="message-bubble">Hello! I'm your AI persona. You can chat with me here to test my personality.</div>
                         </div>
                     </div>
                     <div class="chat-input-area">
-                        <input type="text" id="chat-input" placeholder="Type a message to your agent...">
+                        <input type="text" id="chat-input" placeholder="Type a message to test persona...">
                         <button id="send-chat-btn" class="btn btn-primary">
                             <i class="fas fa-paper-plane"></i>
                         </button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="inbox" class="tab-pane">
+                <div class="inbox-layout">
+                    <!-- Sidebar: Task List -->
+                    <div class="inbox-sidebar">
+                        <div class="inbox-sidebar-header">
+                            <h3>Pending Approvals</h3>
+                            <button id="generate-mocks-btn" class="btn btn-icon btn-sm" title="Generate Mock Tasks">
+                                <i class="fas fa-magic"></i> Mock
+                            </button>
+                        </div>
+                        <div id="task-list" class="task-list">
+                            <!-- Tasks will be injected here -->
+                            <div class="empty-list-message">No pending tasks.</div>
+                        </div>
+                    </div>
+
+                    <!-- Detail: Review Area -->
+                    <div class="inbox-detail" id="inbox-detail-view">
+                        <div class="empty-detail-state">
+                            <i class="fas fa-inbox"></i>
+                            <p>Select a task from the list to review and approve.</p>
+                        </div>
+                        
+                        <div id="task-detail-content" class="task-detail-content hidden">
+                            <div class="detail-header">
+                                <div class="task-meta">
+                                    <span id="detail-platform-badge" class="platform-badge">Instagram</span>
+                                    <span id="detail-type-badge" class="type-badge">Post</span>
+                                </div>
+                                <h2 id="detail-persona-name">Persona Name</h2>
+                            </div>
+
+                            <div class="detail-body">
+                                <div id="detail-image-container" class="detail-image-container hidden">
+                                    <img id="detail-image" src="" alt="Task Image">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="task-content-editor">Content Review & Edit</label>
+                                    <textarea id="task-content-editor" class="form-input" rows="10"></textarea>
+                                </div>
+                            </div>
+
+                            <div class="detail-actions">
+                                <button id="approve-task-btn" class="btn btn-success">
+                                    <i class="fas fa-check"></i> Approve & Publish
+                                </button>
+                                <button id="reject-task-btn" class="btn btn-danger">
+                                    <i class="fas fa-times"></i> Reject
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -251,48 +311,102 @@
             </section>
 
             <section id="gallery" class="tab-pane">
-                <div class="gallery-container">
-                    <div class="card gallery-controls">
-                        <div class="card-header">
-                            <span><i class="fas fa-wand-magic-sparkles"></i> Image Generator</span>
-                        </div>
-                        <div class="card-body">
-                            <form id="image-gen-form">
-                                <div class="form-grid">
-                                    <div class="form-group full-width">
-                                        <label for="gen-method">Generation Method</label>
-                                        <select id="gen-method" class="form-input">
-                                            <option value="gemini">Gemini API (Google AI Studio)</option>
-                                            <option value="comfy">ComfyUI / Colab (Remote API)</option>
+                <div class="studio-layout">
+                    <!-- Left Column: Controls -->
+                    <div class="studio-controls">
+                        <div class="card">
+                            <div class="card-header">
+                                <span><i class="fas fa-sliders"></i> Studio Controls</span>
+                            </div>
+                            <div class="card-body">
+                                <form id="image-gen-form">
+                                    <div class="form-group">
+                                        <label>Method</label>
+                                        <div class="method-toggle">
+                                            <label class="method-chip">
+                                                <input type="radio" name="method" value="gemini" checked>
+                                                <span>Gemini</span>
+                                            </label>
+                                            <label class="method-chip">
+                                                <input type="radio" name="method" value="comfy">
+                                                <span>ComfyUI</span>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label>Format</label>
+                                        <div class="format-chips">
+                                            <label class="chip">
+                                                <input type="radio" name="aspect_ratio" value="Square 1:1" checked>
+                                                <span><i class="fas fa-square"></i> Post</span>
+                                            </label>
+                                            <label class="chip">
+                                                <input type="radio" name="aspect_ratio" value="Story 9:16">
+                                                <span><i class="fas fa-mobile-screen"></i> Story</span>
+                                            </label>
+                                            <label class="chip">
+                                                <input type="radio" name="aspect_ratio" value="Portrait 4:5">
+                                                <span><i class="fas fa-image"></i> Portrait</span>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="gen-style">Aesthetic Style</label>
+                                        <select id="gen-style" class="form-input">
+                                            <option value="Realist">Realist (8k RAW)</option>
+                                            <option value="Cinematic">Cinematic (Dramatic)</option>
+                                            <option value="Polaroid">Polaroid (Vintage)</option>
+                                            <option value="Digital Art">Digital Art</option>
+                                            <option value="Anime">Anime Style</option>
                                         </select>
                                     </div>
-                                    <div id="gemini-group" class="form-group full-width">
-                                        <label for="gemini-api-key">Gemini API Key</label>
-                                        <input type="password" id="gemini-api-key" class="form-input" placeholder="Enter your Gemini API Key...">
+
+                                    <div class="form-group">
+                                        <label for="gen-seed">Face Consistency ID (Seed)</label>
+                                        <div class="seed-input-group">
+                                            <input type="number" id="gen-seed" class="form-input" value="-1" placeholder="-1 for random">
+                                            <button type="button" id="randomize-seed" class="btn btn-icon" title="Randomize">
+                                                <i class="fas fa-random"></i>
+                                            </button>
+                                        </div>
                                     </div>
-                                    <div id="comfy-group" class="form-group full-width hidden">
-                                        <label for="comfy-url">ComfyUI API URL</label>
-                                        <input type="text" id="comfy-url" class="form-input" placeholder="https://your-comfy-tunnel.cloudflare.com">
-                                    </div>
-                                    <div class="form-group full-width">
+
+                                    <div class="form-group">
                                         <label for="image-prompt">Situational Prompt</label>
-                                        <textarea id="image-prompt" class="form-input" rows="3" placeholder="Describe the scene..."></textarea>
+                                        <textarea id="image-prompt" class="form-input" rows="4" placeholder="e.g. drinking coffee in a parisian cafe, wearing a white summer dress..."></textarea>
                                     </div>
-                                </div>
-                                <button type="submit" id="generate-btn" class="btn btn-primary btn-block" style="margin-top: 15px;">
-                                    <i class="fas fa-paint-brush"></i> Generate Image
-                                </button>
-                            </form>
+
+                                    <button type="submit" id="generate-btn" class="btn btn-primary btn-block">
+                                        <i class="fas fa-wand-magic-sparkles"></i> Generate Masterpiece
+                                    </button>
+                                </form>
+                            </div>
                         </div>
                     </div>
 
-                    <div id="gallery-status" class="gallery-status hidden">
-                        <div class="spinner"></div>
-                        <p>Generating image... This may take up to 30 seconds.</p>
-                    </div>
+                    <!-- Right Column: Output & History -->
+                    <div class="studio-display">
+                        <div class="output-viewport card">
+                            <div id="gallery-status" class="skeleton-loader hidden">
+                                <div class="skeleton-image"></div>
+                                <div class="skeleton-text"></div>
+                            </div>
+                            <div id="main-output" class="main-output-container">
+                                <div class="empty-output">
+                                    <i class="fas fa-sparkles"></i>
+                                    <p>Ready to create. Describe a scene and click generate.</p>
+                                </div>
+                            </div>
+                        </div>
 
-                    <div id="gallery-grid" class="gallery-grid">
-                        <!-- Images will be injected here -->
+                        <div class="history-section">
+                            <div class="section-title">Studio History</div>
+                            <div id="gallery-grid" class="studio-grid">
+                                <!-- History images will be injected here -->
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
