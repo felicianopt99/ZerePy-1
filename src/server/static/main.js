@@ -42,6 +42,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const personaModelProvider = document.getElementById('persona-model-provider');
     const personaModelName = document.getElementById('persona-model-name');
 
+    // Gallery Elements
+    const imageGenForm = document.getElementById('image-gen-form');
+    const genMethodSelect = document.getElementById('gen-method');
+    const geminiGroup = document.getElementById('gemini-group');
+    const comfyGroup = document.getElementById('comfy-group');
+    const geminiKeyInput = document.getElementById('gemini-api-key');
+    const comfyUrlInput = document.getElementById('comfy-url');
+    const imagePromptInput = document.getElementById('image-prompt');
+    const galleryGrid = document.getElementById('gallery-grid');
+    const galleryStatus = document.getElementById('gallery-status');
+    const generateBtn = document.getElementById('generate-btn');
+
     // Tab Switching
     tabItems.forEach(item => {
         item.addEventListener('click', (e) => {
@@ -72,6 +84,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (tab === 'connections') fetchConnections();
         if (tab === 'personas') fetchPersonas();
+        if (tab === 'gallery') initGallery();
     }
 
     // Terminal Helper
@@ -570,6 +583,125 @@ document.addEventListener('DOMContentLoaded', () => {
             logToTerminal(`Failed to save persona for ${payload.name}`, 'error');
         }
     };
+
+    // Gallery Logic
+    async function initGallery() {
+        // Load saved values
+        const savedMethod = localStorage.getItem('gen_method') || 'gemini';
+        genMethodSelect.value = savedMethod;
+        toggleGenGroups(savedMethod);
+
+        const savedKey = localStorage.getItem('gemini_api_key');
+        if (savedKey) geminiKeyInput.value = savedKey;
+
+        const savedUrl = localStorage.getItem('comfy_api_url');
+        if (savedUrl) comfyUrlInput.value = savedUrl;
+
+        // Fetch existing images
+        const data = await apiRequest('/agent/gallery_images');
+        if (data && data.images) {
+            galleryGrid.innerHTML = '';
+            data.images.forEach(img => {
+                addGalleryItem(img.url, img.name);
+            });
+        }
+    }
+
+    function toggleGenGroups(method) {
+        if (method === 'gemini') {
+            geminiGroup.classList.remove('hidden');
+            comfyGroup.classList.add('hidden');
+        } else {
+            geminiGroup.classList.add('hidden');
+            comfyGroup.classList.remove('hidden');
+        }
+    }
+
+    genMethodSelect.onchange = (e) => {
+        toggleGenGroups(e.target.value);
+        localStorage.setItem('gen_method', e.target.value);
+    };
+    
+    // Call initGallery early
+    initGallery();
+
+    imageGenForm.onsubmit = async (e) => {
+        e.preventDefault();
+        
+        if (!loadedAgent) {
+            alert('Please load a persona first to provide visual context.');
+            return;
+        }
+
+        const method = genMethodSelect.value;
+        const key = geminiKeyInput.value.trim();
+        const url = comfyUrlInput.value.trim();
+        const prompt = imagePromptInput.value.trim();
+
+        if (method === 'gemini' && !key) {
+            alert('Please provide a Gemini API Key.');
+            return;
+        }
+        if (method === 'comfy' && !url) {
+            alert('Please provide a ComfyUI URL.');
+            return;
+        }
+        if (!prompt) {
+            alert('Please provide a prompt.');
+            return;
+        }
+
+        // Save values
+        localStorage.setItem('gemini_api_key', key);
+        localStorage.setItem('comfy_api_url', url);
+        localStorage.setItem('gen_method', method);
+
+        galleryStatus.classList.remove('hidden');
+        generateBtn.disabled = true;
+
+        logToTerminal(`Generating image via ${method}... please wait.`, 'info');
+
+        const data = await apiRequest('/agent/generate_image', 'POST', {
+            method: method,
+            persona_name: loadedAgent,
+            prompt: prompt,
+            gemini_api_key: key,
+            comfy_api_url: url
+        });
+
+        galleryStatus.classList.add('hidden');
+        generateBtn.disabled = false;
+
+        if (data && data.status === 'success') {
+            logToTerminal(`Image generated successfully for ${loadedAgent}!`, 'success');
+            addGalleryItem(data.image_url, data.prompt);
+            imagePromptInput.value = '';
+        } else {
+            // Error already logged by apiRequest
+            logToTerminal('Image generation failed. Check terminal for details.', 'error');
+        }
+    };
+
+    function addGalleryItem(url, prompt) {
+        const item = document.createElement('div');
+        item.className = 'gallery-item';
+        item.innerHTML = `
+            <img src="${url}" alt="Generated Image" loading="lazy">
+            <div class="gallery-item-content">
+                <span class="gallery-item-prompt" title="${prompt}">${prompt}</span>
+                <button class="btn btn-icon delete-img" title="Delete locally (Not implemented)">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        `;
+        
+        // Insert at top
+        if (galleryGrid.firstChild) {
+            galleryGrid.insertBefore(item, galleryGrid.firstChild);
+        } else {
+            galleryGrid.appendChild(item);
+        }
+    }
 
     // Init
     fetchStatus();

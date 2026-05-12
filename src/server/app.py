@@ -9,6 +9,10 @@ import asyncio
 import json
 import signal
 import threading
+import asyncio
+import base64
+import httpx
+import time
 from pathlib import Path
 from src.cli import ZerePyCLI
 
@@ -29,6 +33,14 @@ class ConfigureRequest(BaseModel):
 class ChatRequest(BaseModel):
     """Request model for chat messages"""
     message: str
+
+class UniversalImageRequest(BaseModel):
+    """Request model for universal image generation"""
+    method: str = "gemini" # gemini or comfy
+    persona_name: str
+    prompt: str
+    gemini_api_key: Optional[str] = None
+    comfy_api_url: Optional[str] = None
 
 class AgentSaveRequest(BaseModel):
     """Request model for saving agent configuration"""
@@ -261,6 +273,124 @@ class ZerePyServer:
                 response = self.state.cli.agent.prompt_llm(chat_request.message)
                 return {"status": "success", "response": response}
             except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.post("/agent/generate_image")
+        async def generate_image(request: UniversalImageRequest):
+            """Generate an image using selected method"""
+            try:
+                # 1. Load agent config for visual context
+                agent_path = Path("agents") / f"{request.persona_name}.json"
+                if not agent_path.exists():
+                    raise HTTPException(status_code=404, detail=f"Agent {request.persona_name} not found")
+                
+                with open(agent_path, "r") as f:
+                    agent_config = json.load(f)
+                
+                visual_prompt_base = agent_config.get("visual_prompt_base", "")
+                full_prompt = f"{visual_prompt_base}, {request.prompt}" if visual_prompt_base else request.prompt
+                
+                gallery_dir = Path(__file__).parent / "static" / "gallery"
+                gallery_dir.mkdir(parents=True, exist_ok=True)
+                timestamp = int(time.time())
+
+                if request.method == "gemini":
+                    # --- GEMINI MODE ---
+                    if not request.gemini_api_key:
+                        raise HTTPException(status_code=400, detail="Gemini API Key is required")
+                    
+                    logger.info(f"Generating Gemini image: {full_prompt}")
+                    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key={request.gemini_api_key}"
+                    payload = {"instances": [{"prompt": full_prompt}], "parameters": {"sampleCount": 1}}
+
+                    async with httpx.AsyncClient(timeout=60.0) as client:
+                        resp = await client.post(api_url, json=payload)
+                        if resp.status_code != 200:
+                            raise HTTPException(status_code=resp.status_code, detail=f"Gemini Error: {resp.text}")
+                        
+                        data = resp.json()
+                        img_b64 = data.get("predictions", [{}])[0].get("bytesBase64Encoded")
+                        if not img_b64:
+                            raise HTTPException(status_code=500, detail="Gemini API prediction missing image data")
+
+                        local_filename = f"gemini_{timestamp}.png"
+                        local_path = gallery_dir / local_filename
+                        with open(local_path, "wb") as f:
+                            f.write(base64.b64decode(img_b64))
+
+                else:
+                    # --- COMFYUI MODE ---
+                    if not request.comfy_api_url:
+                        raise HTTPException(status_code=400, detail="ComfyUI URL is required")
+                    
+                    logger.info(f"Generating ComfyUI image: {full_prompt}")
+                    workflow_path = Path("comfy_workflows") / "default_workflow.json"
+                    with open(workflow_path, "r") as f:
+                        workflow = json.load(f)
+                    
+                    # Inject prompt into Node 6
+                    if "6" in workflow: workflow["6"]["inputs"]["text"] = full_prompt
+                    
+                    api_url = request.comfy_api_url.rstrip("/")
+                    async with httpx.AsyncClient(timeout=60.0) as client:
+                        p_resp = await client.post(f"{api_url}/prompt", json={"prompt": workflow})
+                        prompt_id = p_resp.json().get("prompt_id")
+                        
+                        # Polling
+                        filename = None
+                        for _ in range(45):
+                            await asyncio.sleep(2)
+                            h_resp = await client.get(f"{api_url}/history/{prompt_id}")
+                            if h_resp.status_code == 200 and prompt_id in h_resp.json():
+                                outputs = h_resp.json()[prompt_id].get("outputs", {})
+                                for n in outputs:
+                                    if "images" in outputs[n]:
+                                        filename = outputs[n]["images"][0]["filename"]
+                                        break
+                                if filename: break
+                        
+                        if not filename: raise HTTPException(status_code=504, detail="ComfyUI Timeout")
+                        
+                        v_resp = await client.get(f"{api_url}/view", params={"filename": filename})
+                        local_filename = f"comfy_{timestamp}_{filename}"
+                        local_path = gallery_dir / local_filename
+                        with open(local_path, "wb") as f:
+                            f.write(v_resp.content)
+
+                return {
+                    "status": "success",
+                    "image_url": f"/static/gallery/{local_filename}",
+                    "prompt": full_prompt
+                }
+
+            except Exception as e:
+                logger.error(f"Image generation failed: {e}")
+                if isinstance(e, HTTPException): raise e
+                raise HTTPException(status_code=500, detail=str(e))
+
+
+        @self.app.get("/agent/gallery_images")
+        async def get_gallery_images():
+            """List all images in the gallery directory"""
+            try:
+                gallery_dir = Path(__file__).parent / "static" / "gallery"
+                if not gallery_dir.exists():
+                    return {"images": []}
+                
+                images = []
+                for file in gallery_dir.iterdir():
+                    if file.is_file() and file.suffix.lower() in ('.png', '.jpg', '.jpeg', '.webp'):
+                        mtime = file.stat().st_mtime
+                        images.append({
+                            "url": f"/static/gallery/{file.name}",
+                            "name": file.name,
+                            "time": mtime
+                        })
+                
+                images.sort(key=lambda x: x["time"], reverse=True)
+                return {"images": images}
+            except Exception as e:
+                logger.error(f"Gallery list error: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
         
         @self.app.post("/connections/{name}/configure")
