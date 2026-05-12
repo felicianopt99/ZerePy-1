@@ -21,6 +21,10 @@
      "loop_delay": 900,
      "config": [
        {
+         "name": "nvidia-nim",
+         "model": "meta/llama-3.1-70b-instruct"
+       },
+       {
          "name": "twitter",
          "timeline_read_count": 10,
          "own_tweet_replies_count":2,
@@ -50,4 +54,3 @@
        "engagement_day_multiplier": 1.5
      }
    }
-   

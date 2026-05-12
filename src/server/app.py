@@ -1,9 +1,12 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import logging
 import asyncio
+import json
 import signal
 import threading
 from pathlib import Path
@@ -23,10 +26,35 @@ class ConfigureRequest(BaseModel):
     connection: str
     params: Optional[Dict[str, Any]] = {}
 
+class ChatRequest(BaseModel):
+    """Request model for chat messages"""
+    message: str
+
+class AgentSaveRequest(BaseModel):
+    """Request model for saving agent configuration"""
+    name: str
+    bio: List[str]
+    traits: List[str]
+    visual_prompt_base: Optional[str] = ""
+    examples: Optional[List[str]] = []
+    example_accounts: Optional[List[str]] = []
+    loop_delay: Optional[int] = 900
+    config: Optional[List[Dict[str, Any]]] = []
+    tasks: Optional[List[Dict[str, Any]]] = []
+    use_time_based_weights: Optional[bool] = False
+    time_based_multipliers: Optional[Dict[str, float]] = {}
+
+    class Config:
+        extra = "allow"
+
 class ServerState:
     """Simple state management for the server"""
     def __init__(self):
         self.cli = ZerePyCLI()
+        try:
+            self.cli._load_default_agent()
+        except Exception:
+            pass
         self.agent_running = False
         self.agent_task = None
         self._stop_event = threading.Event()
@@ -76,8 +104,22 @@ class ServerState:
 class ZerePyServer:
     def __init__(self):
         self.app = FastAPI(title="ZerePy Server")
+        
+        # Add CORS middleware
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        
         self.state = ServerState()
         self.setup_routes()
+        
+        # Mount static files
+        static_path = Path(__file__).parent / "static"
+        self.app.mount("/static", StaticFiles(directory=str(static_path), html=True), name="static")
 
     def setup_routes(self):
         @self.app.get("/")
@@ -114,6 +156,44 @@ class ZerePyServer:
                 }
             except Exception as e:
                 raise HTTPException(status_code=400, detail=str(e))
+
+        @self.app.get("/agents/{name}/config")
+        async def get_agent_config(name: str):
+            """Get configuration of a specific agent"""
+            try:
+                agent_path = Path("agents") / f"{name}.json"
+                if not agent_path.exists():
+                    raise HTTPException(status_code=404, detail="Agent not found")
+                
+                with open(agent_path, "r") as f:
+                    config = json.load(f)
+                return config
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/agent/save")
+        async def save_agent(agent_data: AgentSaveRequest):
+            """Save or overwrite an agent's configuration"""
+            try:
+                agents_dir = Path("agents")
+                agents_dir.mkdir(exist_ok=True)
+                
+                # Sanitize filename
+                safe_name = "".join(c for c in agent_data.name if c.isalnum() or c in ("-", "_")).strip()
+                if not safe_name:
+                    raise HTTPException(status_code=400, detail="Invalid agent name")
+                
+                file_path = agents_dir / f"{safe_name}.json"
+                
+                # Convert Pydantic model to dict
+                data = agent_data.dict()
+                
+                with open(file_path, "w") as f:
+                    json.dump(data, f, indent=2)
+                
+                return {"status": "success", "message": f"Agent {safe_name} saved successfully"}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.get("/connections")
         async def list_connections():
@@ -169,6 +249,19 @@ class ZerePyServer:
                 return {"status": "success", "message": "Agent loop stopped"}
             except Exception as e:
                 raise HTTPException(status_code=400, detail=str(e))
+
+        @self.app.post("/agent/chat")
+        async def chat(chat_request: ChatRequest):
+            """Send a message to the agent and get a response"""
+            if not self.state.cli.agent:
+                raise HTTPException(status_code=400, detail="No agent loaded")
+            
+            try:
+                # Use the prompt LLM to get a response
+                response = self.state.cli.agent.prompt_llm(chat_request.message)
+                return {"status": "success", "response": response}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
         
         @self.app.post("/connections/{name}/configure")
         async def configure_connection(name: str, config: ConfigureRequest):

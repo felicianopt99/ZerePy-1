@@ -21,15 +21,14 @@
   "loop_delay": 900,
   "config": [
     {
+      "name": "nvidia-nim",
+      "model": "meta/llama-3.1-70b-instruct"
+    },
+    {
       "name": "twitter",
       "timeline_read_count": 10,
       "own_tweet_replies_count":2,
       "tweet_interval": 5400
-    },
-    {
-      "name": "farcaster",
-      "timeline_read_count": 10,
-      "cast_interval": 60
     },
     {
       "name": "openai",
@@ -57,28 +56,6 @@
       "chain_id": "45762"
     },
     {
-      "name": "ollama",
-      "base_url": "http://localhost:11434",
-      "model": "llama3.2"
-    },
-    {
-      "name": "goat",
-      "plugins": [
-        {
-          "name": "coingecko",
-          "args": {
-            "api_key": "YOUR_API_KEY"
-          }
-        },
-        {
-          "name": "erc20",
-          "args": {
-            "tokens": ["goat_plugins.erc20.token.PEPE", "goat_plugins.erc20.token.USDC"]
-          }
-        }
-      ]
-    },
-    {
       "name": "groq",
       "model": "llama-3.3-70b-versatile",
       "temperature": 0.5
@@ -103,7 +80,6 @@
       "name": "evm",
       "network": "ethereum"
      },
-    
     {
       "name": "discord",
       "message_read_count": 10,

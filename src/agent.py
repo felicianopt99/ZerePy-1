@@ -84,6 +84,8 @@ class ZerePyAgent:
             self.username = os.getenv('TWITTER_USERNAME', '').lower()
             if not self.username:
                 logger.warning("Twitter username not found, some Twitter functionalities may be limited")
+        
+        self.is_llm_set = True
 
     def _construct_system_prompt(self) -> str:
         """Construct the system prompt from agent configuration"""
@@ -137,6 +139,10 @@ class ZerePyAgent:
 
     def prompt_llm(self, prompt: str, system_prompt: str = None) -> str:
         """Generate text using the configured LLM provider"""
+        if not self.is_llm_set:
+            self._setup_llm_provider()
+            self.is_llm_set = True
+
         system_prompt = system_prompt or self._construct_system_prompt()
 
         return self.connection_manager.perform_action(

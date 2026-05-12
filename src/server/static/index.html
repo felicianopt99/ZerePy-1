@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZerePy Dashboard | AI Agent Control</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="dark-theme">
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <i class="fas fa-brain"></i>
+                <span>ZerePy</span>
+            </div>
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" data-tab="dashboard">
+                    <i class="fas fa-th-large"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="chat">
+                    <i class="fas fa-comment-dots"></i>
+                    <span>Chat</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="connections">
+                    <i class="fas fa-plug"></i>
+                    <span>Connections</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="personas">
+                    <i class="fas fa-user-astronaut"></i>
+                    <span>Personas</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="status-indicator">
+                    <span class="status-dot green"></span>
+                    <span class="status-text">Server Online</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="top-header">
+                <div class="header-left">
+                    <h1 id="tab-title">Dashboard</h1>
+                </div>
+                <div class="header-right">
+                    <div class="agent-selector">
+                        <span class="label">Active Persona:</span>
+                        <select id="persona-dropdown">
+                            <option value="">No Persona Loaded</option>
+                        </select>
+                        <button id="load-agent-btn" class="btn btn-primary btn-sm">Load</button>
+                    </div>
+                    <div class="loop-controls">
+                        <button id="start-loop-btn" class="btn btn-success btn-sm">
+                            <i class="fas fa-play"></i> Start
+                        </button>
+                        <button id="stop-loop-btn" class="btn btn-danger btn-sm" disabled>
+                            <i class="fas fa-stop"></i> Stop
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Tab Contents -->
+            <section id="dashboard" class="tab-pane active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon purple"><i class="fas fa-microchip"></i></div>
+                        <div class="stat-content">
+                            <h3>Model</h3>
+                            <p id="stat-model">Not Set</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon cyan"><i class="fas fa-link"></i></div>
+                        <div class="stat-content">
+                            <h3>Active Connections</h3>
+                            <p id="stat-connections">0</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon green"><i class="fas fa-check-circle"></i></div>
+                        <div class="stat-content">
+                            <h3>Status</h3>
+                            <p id="stat-status">Idle</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-body">
+                    <div class="card terminal-card">
+                        <div class="card-header">
+                            <span><i class="fas fa-terminal"></i> Terminal Output</span>
+                            <button id="clear-terminal" class="btn-icon"><i class="fas fa-trash"></i></button>
+                        </div>
+                        <div id="terminal" class="terminal-body">
+                            <div class="terminal-line system">Welcome to ZerePy Web Interface. System initialized.</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="chat" class="tab-pane">
+                <div class="chat-container">
+                    <div id="chat-messages" class="chat-messages">
+                        <div class="message assistant">
+                            <div class="message-bubble">Hello! I am your loaded agent. How can I help you today?</div>
+                        </div>
+                    </div>
+                    <div class="chat-input-area">
+                        <input type="text" id="chat-input" placeholder="Type a message to your agent...">
+                        <button id="send-chat-btn" class="btn btn-primary">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="connections" class="tab-pane">
+                <div class="connections-grid" id="connections-list">
+                    <!-- Connections will be injected here -->
+                </div>
+            </section>
+
+            <section id="personas" class="tab-pane">
+                <div class="personas-layout">
+                    <!-- Master (List) -->
+                    <div class="personas-master">
+                        <button id="create-persona-btn" class="btn btn-success btn-block" style="margin-bottom: 20px;">
+                            <i class="fas fa-plus"></i> Create New Persona
+                        </button>
+                        <div id="personas-list" class="personas-list-container">
+                            <!-- Personas will be injected here -->
+                        </div>
+                    </div>
+
+                    <!-- Detail (Editor) -->
+                    <div class="persona-detail">
+                        <div class="card">
+                            <div class="card-header">
+                                <span><i class="fas fa-edit"></i> Persona Editor</span>
+                            </div>
+                            <div class="card-body">
+                                <form id="persona-form">
+                                    <div class="form-grid">
+                                        <div class="form-group full-width">
+                                            <label for="persona-name">Name (Unique ID for the persona)</label>
+                                            <input type="text" id="persona-name" class="form-input" placeholder="e.g. Daisy Brooks" required>
+                                        </div>
+                                        <div class="form-group full-width">
+                                            <label for="persona-bio">Bio (One paragraph per line)</label>
+                                            <textarea id="persona-bio" class="form-input" rows="8" placeholder="Enter agent bio..."></textarea>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="persona-traits">Traits (Comma-separated)</label>
+                                            <textarea id="persona-traits" class="form-input" rows="4" placeholder="e.g. Kind, Funny, Intelligent"></textarea>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="persona-visual">Visual Prompt Base (Description of the look)</label>
+                                            <textarea id="persona-visual" class="form-input" rows="4" placeholder="e.g. Blonde, blue eyes, casual style"></textarea>
+                                        </div>
+
+                                        <!-- New: Active Integrations Section -->
+                                        <div class="form-group full-width">
+                                            <div class="form-section-title">Active Integrations</div>
+                                            <div class="integrations-grid">
+                                                <!-- Twitter Toggle -->
+                                                <div class="integration-item">
+                                                    <div class="integration-header">
+                                                        <div class="integration-info">
+                                                            <i class="fab fa-twitter"></i>
+                                                            <span>Twitter</span>
+                                                        </div>
+                                                        <label class="switch">
+                                                            <input type="checkbox" id="enable-twitter">
+                                                            <span class="slider round"></span>
+                                                        </label>
+                                                    </div>
+                                                    <div id="twitter-settings" class="integration-settings hidden">
+                                                        <div class="form-row">
+                                                            <div class="form-group">
+                                                                <label>Read Timeline Count</label>
+                                                                <input type="number" id="twitter-read-count" class="form-input" value="10">
+                                                            </div>
+                                                            <div class="form-group">
+                                                                <label>Tweet Interval (s)</label>
+                                                                <input type="number" id="twitter-interval" class="form-input" value="5400">
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                
+                                                <!-- Instagram Toggle (Mock) -->
+                                                <div class="integration-item">
+                                                    <div class="integration-header">
+                                                        <div class="integration-info">
+                                                            <i class="fab fa-instagram"></i>
+                                                            <span>Instagram (Mock)</span>
+                                                        </div>
+                                                        <label class="switch">
+                                                            <input type="checkbox" id="enable-instagram">
+                                                            <span class="slider round"></span>
+                                                        </label>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Fanvue Toggle (Mock) -->
+                                                <div class="integration-item">
+                                                    <div class="integration-header">
+                                                        <div class="integration-info">
+                                                            <i class="fas fa-star"></i>
+                                                            <span>Fanvue (Mock)</span>
+                                                        </div>
+                                                        <label class="switch">
+                                                            <input type="checkbox" id="enable-fanvue">
+                                                            <span class="slider round"></span>
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="form-group full-width">
+                                            <label>Main AI Model Provider</label>
+                                            <div class="form-row">
+                                                <select id="persona-model-provider" class="form-input">
+                                                    <option value="">Select Provider...</option>
+                                                </select>
+                                                <input type="text" id="persona-model-name" class="form-input" placeholder="Model Name (e.g. gpt-4o)">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary" style="margin-top: 10px;">
+                                        <i class="fas fa-save"></i> Save Persona
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="config-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-title">Configure Connection</h2>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="config-form">
+                    <div id="config-fields"></div>
+                    <button type="submit" class="btn btn-primary btn-block">Save Configuration</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="main.js"></script>
+</body>
+</html>
